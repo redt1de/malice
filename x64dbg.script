@@ -1,0 +1,64 @@
+
+// startup bp script
+bc
+// set BP on ZwAllocateVirtualMemory, if allocate size (RCX) == 0x8181
+bp 00007FFB9AEAD140
+bpcnd 00007FFB9AEAD140, "[RCX] == 0x8181"
+
+// are we in user mod, if not run
+cmp mod.user(cip), 0
+je nope
+jmp inuser
+ret
+
+nope:
+run
+cmp mod.user(cip), 0
+je nothere
+jmp inuser
+ret
+
+// we are in user module, test go asm func start with xor r15,r15 so set a BP there
+inuser:
+findasm "xor r14,0"
+cmp $result, 0
+je nothere
+//bc
+bp ref.addr(0)
+//msg "found xor r15,r15: breakpoint set"
+log "found asm tag: breakpoint set: {p:ref.addr(0)}"
+
+nothere:
+ret
+
+
+
+/////////////////////////////////
+// script for setting a BP on a hex
+// 
+cmp mod.user(cip), 0
+je nope
+jmp inuser
+ret
+
+nope:
+run
+cmp mod.user(cip), 0
+je nothere
+jmp inuser
+ret
+
+inuser:
+// look for xor r14,0
+find cip, "4983F600"
+cmp $result, 0
+je nothere
+bc
+bp ref.addr(0)
+//msg "found xor r15,r15: breakpoint set"
+log "found asm tag: breakpoint set: {p:ref.addr(0)}"
+
+nothere:
+ret
+
+

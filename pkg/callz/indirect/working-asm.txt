@@ -1,0 +1,87 @@
+
+/////// GHETTO janky ass return address spoofing, uses gadget: add rsp,78h;ret
+// func doFancyCall(ssn uint16, syscall_ret_tramp uintptr, add_rsp_68_ret_tramp uintptr, argh ...uintptr) uint32
+TEXT ·doFancyCall(SB),NOSPLIT, $0-40
+    XORQ    R11, R11            // R11 = 0
+    XORQ    R12,R12             // R12 = 0
+    XORQ    R14,R14
+    XORQ    R15,R15
+    MOVQ    0(SP), R13          // put return address into R14
+    XORQ    AX, AX              // AX = 0 
+    MOVW    ssn+0(FP), AX       // put ssn into AX
+    MOVQ    syscall_ret_tramp+8(FP), R11 // put syscall;ret gadget address into R11
+    MOVQ    add_rsp_68_ret_tramp+16(FP), R12 // put add rsp, 68; ret gadget address into R12
+    MOVQ    argh_base+24(FP),SI // put variadic pointer into SI
+    MOVQ    argh_len+32(FP),CX  // put variadic size into CX, CX = num args
+
+    //////////////////////////////////////////////////////////////// this is stupid
+    MOVQ    $0x0,R15
+    SUBQ    $0x80, SP	// make room for args
+    MOVQ    SP,R14
+    MOVQ    R15, 0(SP)            // should get replaced with stuff later
+    MOVQ    R15, 8(SP)            // push 0x0
+    MOVQ    R15, 16(SP)           // push 0x0
+    MOVQ    R15, 24(SP)           // push 0x0
+    MOVQ    R15, 32(SP)           // push 0x0
+    MOVQ    R15, 40(SP)           // push 0x0
+    MOVQ    R15, 48(SP)           // push 0x0
+    MOVQ    R15, 56(SP)           // push 0x0
+    MOVQ    R15, 64(SP)           // push 0x0
+    MOVQ    R15, 72(SP)           // push 0x0
+    MOVQ    R15, 80(SP)           // push 0x0
+    MOVQ    R15, 88(SP)           // push 0x0
+    MOVQ    R15, 96(SP)           // push 0x0
+    MOVQ    R15, 104(SP)          // push 0x0
+    MOVQ    R15, 112(SP)          // push 0x0
+    MOVQ    R15, 120(SP)          // push 0x0
+    MOVQ    R13, 128(SP)          // push 0x0
+
+    ////////////////////////////////////////////////////////////
+    MOVQ    0x30(GS), DI        // Get TEB
+    MOVL    $0, 0x68(DI)        // TEB.SetLastError = 0
+    SUBQ    $(maxargs*8), SP	// make room for args
+    CMPL    CX, $0              // CX <= 0, no parameters, special case just call
+    JLE     jumpcall
+    CMPL    CX, $4              // CX <= 4, Fast version, do not store args on the stack.
+    JLE	    loadregs
+    CMPL    CX, $maxargs        // Check we have enough room for args. CX <= 16
+    JLE	    2(PC)               // jump over the int3
+    INT	    $3			        // else not enough room -> crash
+    // Copy args to the stack.
+    MOVQ    SP, DI
+    CLD
+    REP; MOVSQ
+    MOVQ    SP, SI
+	
+loadregs:
+    // Load first 4 args into correspondent registers.
+    MOVQ	0(SI), CX
+    MOVQ	8(SI), DX
+    MOVQ	16(SI), R8
+    MOVQ	24(SI), R9
+    // Floating point arguments are passed in the XMM registers
+    // Set them here in case any of the arguments are floating point values. 
+    // For details see: https://msdn.microsoft.com/en-us/library/zthk2dkh.aspx
+    MOVQ	CX, X0
+    MOVQ	DX, X1
+    MOVQ	R8, X2
+    MOVQ	R9, X3
+	
+jumpcall:
+    MOVQ    CX, R10               // save CX in R10
+    SUBQ    $8, SP             
+    MOVQ    R12, 0(SP)            // push add rsp, 68; ret gadget address
+
+    LEAQ   ·cleanup(SB), R15      // store address of cleanup() in R15
+    MOVQ   R15, -8(R14)           // set the return address of the fake stack to cleanup()
+    JMP    R11   // jump to syscall;ret gadget address instead of direct syscall
+
+TEXT ·cleanup(SB),NOSPLIT, $0-16
+    BYTE $0x90
+    BYTE $0x90
+    BYTE $0x90
+    BYTE $0x90
+    ADDQ	$((maxargs)*8), SP // restore stack pointer
+    //POPQ	CX  // restore CX
+    MOVL	AX, errcode+40(FP) // put return value into errcode
+    RET
