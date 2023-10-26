@@ -9,7 +9,9 @@ import (
 
 	"github.com/redt1de/malice/pkg/callz"
 	"github.com/redt1de/malice/pkg/callz/hashers"
+	"github.com/redt1de/malice/pkg/mem"
 	"github.com/redt1de/malice/pkg/pe"
+	"github.com/redt1de/malice/pkg/peb"
 )
 
 var (
@@ -69,13 +71,6 @@ func New(opts ...callz.CallerOpt) *DarkCaller {
 
 // NotLazyDll mimics windows.NewLazyDLL() without any calls to LoadLibrary or GetProcAddress. returns nil if DLL is not found in memory.
 func (d *DarkCaller) NewDarkDll(name string) *DarkDll {
-	// fmt.Println(">>>>>", d.c.Opts)
-	// res, ok := d.c.Opts["test"]
-	// if ok {
-	// 	println(res.(bool))
-	// } else {
-	// 	println("no test")
-	// }
 	var err error
 	var peFile *pe.File
 	var image []byte
@@ -92,6 +87,7 @@ func (d *DarkCaller) NewDarkDll(name string) *DarkDll {
 			return nil
 			// panic(err)
 		}
+
 	case RESOLVER_DISK:
 		image, err = os.ReadFile(name)
 		if err != nil {
@@ -176,18 +172,22 @@ func (u *DarkDll) FindProc(name string) *DarkProc {
 // NewProc mimics windows.NewLazyDLL().NewProc() but does so without any windows api functions like GetProcAddress
 func (u *DarkDll) NewProc(name string) *DarkProc {
 	ret := &DarkProc{Name: name, dll: u}
-	ex, e := u.Pe.Exports()
-	if e != nil {
-		return nil
-	}
-
-	for _, exp := range ex {
-		if exp.Name == name || u.cfg.Hasher(exp.Name) == name {
-			ret.addr = u.Start + uintptr(exp.VirtualAddress)
+	baseAddr := u.Start
+	exportsBaseAddr := peb.GetExportsDirAddr(baseAddr)
+	numberOfNames := peb.GetNumberOfNames(exportsBaseAddr)
+	addressOfFunctions := peb.GetAddressOfFunctions(baseAddr, exportsBaseAddr)
+	addressOfNames := peb.GetAddressOfNames(baseAddr, exportsBaseAddr)
+	addressOfNameOrdinals := peb.GetAddressOfNameOrdinals(baseAddr, exportsBaseAddr)
+	for i := uint32(0); i < numberOfNames; i++ {
+		fn := mem.ReadCString(baseAddr, mem.ReadDword(addressOfNames, i*4))
+		if string(fn) == name || u.cfg.Hasher(string(fn)) == name {
+			nameOrd := mem.ReadWord(addressOfNameOrdinals, i*2)
+			rva := mem.ReadDword(addressOfFunctions, uint32(nameOrd*4))
+			ret.addr = peb.Rva2Va(baseAddr, rva)
 			return ret
 		}
 	}
-	return nil // panic(name + " not found in " + u.Name)
+	return nil
 }
 
 // Addr mimics windows.NewLazyDLL().NewProc().Addr()
@@ -237,11 +237,11 @@ func (p *DarkProc) Call(a ...uintptr) (r1, r2 uintptr, lastErr error) {
 
 // getMod is the wrapper around the asm funcs to walk the module list in PEB
 func (d *DarkCaller) getMod(name string) (start uintptr, size uintptr, modulepath string) {
-	_, _, p := GetModByIndex(0)
+	_, _, p := peb.GetModByIndex(0)
 	base := p
 	i := 1
 	for {
-		s, si, p := GetModByIndex(i)
+		s, si, p := peb.GetModByIndex(i)
 		if p == "" {
 			break
 		}

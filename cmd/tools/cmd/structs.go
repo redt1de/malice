@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"regexp"
 	"strings"
 	"text/tabwriter"
@@ -107,4 +108,28 @@ func labelStructOffsetsFile(f string) (string, error) {
 	}
 
 	return "", nil
+}
+
+func printf(a string, b ...any) { fmt.Printf(a, b...) }
+func RECURSIVE() {
+	// var o int
+	// printAll(reflect.ValueOf(CONTEXT{}), &o, "")
+}
+
+func printAll(v reflect.Value, offset *int, ident string) {
+	s := v
+	typeOfT := s.Type()
+	for i := 0; i < s.NumField(); i++ {
+		f := s.Field(i)
+
+		if f.Kind().String() == "struct" {
+			x1 := reflect.ValueOf(f.Interface())
+			fmt.Printf("// struct %s (%d bytes)\n", f.Type().String(), f.Type().Size())
+			printAll(x1, offset, ident+"    ")
+		} else {
+			// fmt.Printf("%s%s %s = %d\n", ident, typeOfT.Field(i).Name, f.Type(), f.Type().Size())
+			printf("// %s%s  offset: %d\n", ident, typeOfT.Field(i).Name, *offset)
+			*offset += int(f.Type().Size())
+		}
+	}
 }

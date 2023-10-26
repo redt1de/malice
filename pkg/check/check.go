@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"unsafe"
 
-	"github.com/redt1de/malice/pkg/callz/darklib"
+	"github.com/redt1de/malice/pkg/peb"
 )
 
 type WinVer struct {
@@ -16,7 +16,7 @@ type WinVer struct {
 }
 
 func GetVersion() WinVer {
-	p := darklib.GetPEB()
+	p := peb.GetPEB()
 	return WinVer{
 		OSMajorVersion: *(*uint32)(unsafe.Pointer(p + uintptr(0x118))),
 		OSMinorVersion: *(*uint32)(unsafe.Pointer(p + uintptr(0x11c))),
@@ -27,7 +27,7 @@ func GetVersion() WinVer {
 }
 
 func BeingDebugged() bool {
-	p := darklib.GetPEB()
+	p := peb.GetPEB()
 	b := *(*uint8)(unsafe.Pointer(p + uintptr(0x002)))
 	return b != 0
 }

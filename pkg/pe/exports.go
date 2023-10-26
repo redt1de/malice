@@ -97,9 +97,10 @@ func (f *File) Exports() ([]Export, error) {
 	dt.DllName, _ = getString(d, int(dt.NameRVA-ds.VirtualAddress))
 
 	ordinalTable := make(map[uint16]uint32)
+
 	if dt.OrdinalTableAddr > ds.VirtualAddress && dt.NameTableAddr > ds.VirtualAddress {
 		// seek to ordinal table
-		dno := d[dt.OrdinalTableAddr-ds.VirtualAddress:]
+		dno := d[dt.OrdinalTableAddr-ds.VirtualAddress:] /////////////////////////////////
 		// seek to names table
 		dnn := d[dt.NameTableAddr-ds.VirtualAddress:]
 

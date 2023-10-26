@@ -6,18 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"unsafe"
 
 	"github.com/redt1de/malice/pkg/callz"
 	"github.com/redt1de/malice/pkg/callz/hashers"
+	"github.com/redt1de/malice/pkg/mem"
 	"github.com/redt1de/malice/pkg/pe"
-)
-
-const (
-	RESOLVER_MEM    = 0
-	RESOLVER_DISK   = 1
-	RESOLVER_EXCEPT = 2
+	"github.com/redt1de/malice/pkg/peb"
 )
 
 var GADGET_SYSCALL_RET = []byte{0x0f, 0x05, 0xc3}
@@ -74,42 +72,53 @@ func NewNtDll(opts ...callz.CallerOpt) *NtDll {
 	}
 }
 
-// GetNtdll returns the start and size of ntdll
-func GetNtdll() (start uintptr, size uintptr)
-
-// func getModByIndex(i int) (start uintptr, size uintptr)
-
-// GetSSN does the heavy lifting - will resolve a name or ordinal into a sysid by getting exports, and parsing the first few bytes of the function to extract the ID. Doens't look at the ord value unless useOrd is set to true.
-func (n *NtDll) GetSSN(funcname string) (uint16, error) {
-	ex, e := n.Pe.Exports()
-	if e != nil {
-		return 0, e
+func GetNtdll() (start uintptr, size uintptr) {
+	i := 0
+	for {
+		start, size, p := peb.GetModByIndex(i)
+		if p == "" {
+			break
+		}
+		p = strings.ToLower(filepath.Base(p))
+		p = hashers.Djb2(p)
+		if p == "377d2b522d3b5ed" {
+			return start, size
+		}
+		i++
 	}
+	return 0, 0
+}
 
-	for _, exp := range ex {
-		// println(funcname, "vs", exp.Name)
-		if n.cfg.Hasher(exp.Name) == funcname || exp.Name == funcname {
-			offset := rvaToOffset(n.Pe, exp.VirtualAddress)
-			bBytes, e := n.Pe.Bytes() // on sentinelOne box, this panics.Exception: 0x80000001 == STATUS_GUARD_PAGE_VIOLATION
-			if e != nil {
-				return 0, e
-			}
-			buff := bBytes[offset : offset+10]
-
+// new version of getssn, moving away from debug/pe since S1 causes issues. needs testing.
+func (n *NtDll) GetSSN(name string) (uint16, error) {
+	baseAddr := n.Start
+	exportsBaseAddr := peb.GetExportsDirAddr(baseAddr)
+	numberOfNames := peb.GetNumberOfNames(exportsBaseAddr)
+	addressOfFunctions := peb.GetAddressOfFunctions(baseAddr, exportsBaseAddr)
+	addressOfNames := peb.GetAddressOfNames(baseAddr, exportsBaseAddr)
+	addressOfNameOrdinals := peb.GetAddressOfNameOrdinals(baseAddr, exportsBaseAddr)
+	for i := uint32(0); i < numberOfNames; i++ {
+		fn := mem.ReadCString(baseAddr, mem.ReadDword(addressOfNames, i*4))
+		if string(fn) == name || n.cfg.Hasher(string(fn)) == name {
+			nameOrd := mem.ReadWord(addressOfNameOrdinals, i*2)
+			rva := mem.ReadDword(addressOfFunctions, uint32(nameOrd*4))
+			fnAddr := peb.Rva2Va(baseAddr, rva)
+			bBytes := *(*[]byte)(unsafe.Pointer(fnAddr))
+			buff := unsafe.Slice((*byte)(unsafe.Pointer(&bBytes)), 10)
 			sysId, e := sysIDFromRawBytes(buff)
-
 			var err MayBeHookedError
 			// Look for the syscall ID in the neighborhood
 			if errors.As(e, &err) {
 				// big thanks to @nodauf for implementing the halos gate logic
-				// start, size := GetNtdll()
 				distanceNeighbor := 0
 				// Search forward
-				for i := uintptr(offset); i < n.Start+n.Size; i += 1 {
-					if bBytes[i] == byte('\x0f') && bBytes[i+1] == byte('\x05') && bBytes[i+2] == byte('\xc3') {
+				for i := uintptr(fnAddr); i < n.Start+n.Size-32; i += 1 {
+					bBytes := *(*[]byte)(unsafe.Pointer(i))
+					buf := unsafe.Slice((*byte)(unsafe.Pointer(&bBytes)), 32)
+					if buf[0] == byte('\x0f') && buf[1] == byte('\x05') && buf[2] == byte('\xc3') {
 						distanceNeighbor++
 						// The sysid should be located 14 bytes after the syscall; ret instruction.
-						sysId, e := sysIDFromRawBytes(bBytes[i+14 : i+14+8])
+						sysId, e := sysIDFromRawBytes(buf[14 : 14+8])
 						if !errors.As(e, &err) {
 							return sysId - uint16(distanceNeighbor), e
 						}
@@ -118,11 +127,13 @@ func (n *NtDll) GetSSN(funcname string) (uint16, error) {
 				// reset the value to 1. When we go forward we catch the current syscall; ret but not when we go backward, so distanceNeighboor = 0 for forward and distanceNeighboor = 1 for backward
 				distanceNeighbor = 1
 				// If nothing has been found forward, search backward
-				for i := uintptr(offset) - 1; i > 0; i -= 1 {
-					if bBytes[i] == byte('\x0f') && bBytes[i+1] == byte('\x05') && bBytes[i+2] == byte('\xc3') {
+				for i := uintptr(fnAddr) - 1; i > 0; i -= 1 {
+					bBytes := *(*[]byte)(unsafe.Pointer(i))
+					buf := unsafe.Slice((*byte)(unsafe.Pointer(&bBytes)), 32)
+					if buf[i] == byte('\x0f') && buf[i+1] == byte('\x05') && buf[i+2] == byte('\xc3') {
 						distanceNeighbor++
 						// The sysid should be located 14 bytes after the syscall; ret instruction.
-						sysId, e := sysIDFromRawBytes(bBytes[i+14 : i+14+8])
+						sysId, e := sysIDFromRawBytes(buf[14 : 14+8])
 						if !errors.As(e, &err) {
 							return sysId + uint16(distanceNeighbor) - 1, e
 						}
@@ -131,21 +142,11 @@ func (n *NtDll) GetSSN(funcname string) (uint16, error) {
 			} else {
 				return sysId, e
 			}
-		}
-	}
-	return 0, errors.New("could not find syscall ID")
-}
 
-// rvaToOffset converts an RVA value from a PE file into the file offset. When using binject/debug, this should work fine even with in-memory files.
-func rvaToOffset(pefile *pe.File, rva uint32) uint32 {
-	for _, hdr := range pefile.Sections {
-		baseoffset := uint64(rva)
-		if baseoffset > uint64(hdr.VirtualAddress) &&
-			baseoffset < uint64(hdr.VirtualAddress+hdr.VirtualSize) {
-			return rva - hdr.VirtualAddress + hdr.Offset
 		}
 	}
-	return rva
+
+	return 0, errors.New("could not find syscall ID")
 }
 
 // sysIDFromRawBytes takes a byte slice and determines if there is a sysID in the expected location. Returns a MayBeHookedError if the signature does not match.
@@ -176,38 +177,20 @@ func IsHooked(addr uintptr) bool {
 	return !bytes.Equal(readmem, HookCheck)
 }
 
-func getTrampoline(exportAddr uintptr) uintptr
-
-// GetTRampolines returns the address of a clean syscall;ret gadget. Intentionally searches in syscall stubs != to the syscall we are calling, like SysWhispers3
-func (n *NtDll) GetTrampoline(notfunc string) uintptr {
-	ex, e := n.Pe.Exports()
-	if e != nil {
-		return 0
-	}
-	for _, exp := range ex {
-		if exp.Name != notfunc && n.cfg.Hasher(exp.Name) != notfunc { // avoid the syscall we're using
-			// tramp := getTrampoline(n.Start + uintptr(exp.VirtualAddress))
-			tramp := n.FindGadget(GADGET_SYSCALL_RET)
-			if tramp != 0 {
-				return tramp
-			}
-		}
-	}
-	return 0
-}
-
-// NewProc mimics windows.NewLazyDLL().NewProc() but does so without any windows api functions like GetProcAddress
 func (u *NtDll) NewProc(name string) *NtProc {
 	ret := &NtProc{Name: name, dll: u}
-
-	ex, e := u.Pe.Exports()
-	if e != nil {
-		return nil
-	}
-
-	for _, exp := range ex {
-		if exp.Name == name || u.cfg.Hasher(exp.Name) == name {
-			ret.addr = u.Start + uintptr(exp.VirtualAddress)
+	baseAddr := u.Start
+	exportsBaseAddr := peb.GetExportsDirAddr(baseAddr)
+	numberOfNames := peb.GetNumberOfNames(exportsBaseAddr)
+	addressOfFunctions := peb.GetAddressOfFunctions(baseAddr, exportsBaseAddr)
+	addressOfNames := peb.GetAddressOfNames(baseAddr, exportsBaseAddr)
+	addressOfNameOrdinals := peb.GetAddressOfNameOrdinals(baseAddr, exportsBaseAddr)
+	for i := uint32(0); i < numberOfNames; i++ {
+		fn := mem.ReadCString(baseAddr, mem.ReadDword(addressOfNames, i*4))
+		if string(fn) == name || u.cfg.Hasher(string(fn)) == name {
+			nameOrd := mem.ReadWord(addressOfNameOrdinals, i*2)
+			rva := mem.ReadDword(addressOfFunctions, uint32(nameOrd*4))
+			ret.addr = peb.Rva2Va(baseAddr, rva)
 			return ret
 		}
 	}

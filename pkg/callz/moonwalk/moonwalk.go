@@ -54,9 +54,12 @@ func New(opts ...callz.CallerOpt) *MoonwalkCaller {
 	n := ntd.NewNtDll(opts...)
 
 	ret := MoonwalkCaller{c: cf, ntd: n}
-	ret.intCaller = darklib.New()
+	ret.intCaller = darklib.New() ////////////////// change to hashing once testing is done
 	ret.intk32 = ret.intCaller.NewDarkDll("kernel32.dll")
 	ret.intkb = ret.intCaller.NewDarkDll("kernelbase.dll")
+	if ret.intk32 == nil || ret.intkb == nil {
+		panic("failed to load internal dlls")
+	}
 	return &ret
 }
 

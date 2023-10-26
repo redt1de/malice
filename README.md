@@ -1,6 +1,15 @@
 
 
 ## TODO:
+# !!!!!!! had issues with S1 !!!!!!!!!!!!!!
+ - had to circumvent PEB hooking, ntd does not grab first mod since its not really ntdll
+ - pe.Exports() does not work.
+        panic: runtime error: slice bounds out of range [270471:208896]
+        OrdinalTableAddr is not what is expected
+        implement different export lookup using ascherons asm.
+        see darklib.Test()
+
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
  - hwsyscall,moonwalk need cleaned up, add error/nil value checks, do testing
  - moonwalk needs a little more work, its a bit messy but functional
  - implement the various resolvers in each call type, mem/disk/remote
