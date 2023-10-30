@@ -179,10 +179,10 @@ func (u *DarkDll) NewProc(name string) *DarkProc {
 	addressOfNames := peb.GetAddressOfNames(baseAddr, exportsBaseAddr)
 	addressOfNameOrdinals := peb.GetAddressOfNameOrdinals(baseAddr, exportsBaseAddr)
 	for i := uint32(0); i < numberOfNames; i++ {
-		fn := mem.ReadCString(baseAddr, mem.ReadDword(addressOfNames, i*4))
+		fn := mem.ReadCString(baseAddr, mem.ReadDwordAtOffset(addressOfNames, i*4))
 		if string(fn) == name || u.cfg.Hasher(string(fn)) == name {
-			nameOrd := mem.ReadWord(addressOfNameOrdinals, i*2)
-			rva := mem.ReadDword(addressOfFunctions, uint32(nameOrd*4))
+			nameOrd := mem.ReadWordAtOffset(addressOfNameOrdinals, i*2)
+			rva := mem.ReadDwordAtOffset(addressOfFunctions, uint32(nameOrd*4))
 			ret.addr = peb.Rva2Va(baseAddr, rva)
 			return ret
 		}

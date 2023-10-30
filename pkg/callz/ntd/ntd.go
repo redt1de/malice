@@ -98,10 +98,10 @@ func (n *NtDll) GetSSN(name string) (uint16, error) {
 	addressOfNames := peb.GetAddressOfNames(baseAddr, exportsBaseAddr)
 	addressOfNameOrdinals := peb.GetAddressOfNameOrdinals(baseAddr, exportsBaseAddr)
 	for i := uint32(0); i < numberOfNames; i++ {
-		fn := mem.ReadCString(baseAddr, mem.ReadDword(addressOfNames, i*4))
+		fn := mem.ReadCString(baseAddr, mem.ReadDwordAtOffset(addressOfNames, i*4))
 		if string(fn) == name || n.cfg.Hasher(string(fn)) == name {
-			nameOrd := mem.ReadWord(addressOfNameOrdinals, i*2)
-			rva := mem.ReadDword(addressOfFunctions, uint32(nameOrd*4))
+			nameOrd := mem.ReadWordAtOffset(addressOfNameOrdinals, i*2)
+			rva := mem.ReadDwordAtOffset(addressOfFunctions, uint32(nameOrd*4))
 			fnAddr := peb.Rva2Va(baseAddr, rva)
 			bBytes := *(*[]byte)(unsafe.Pointer(fnAddr))
 			buff := unsafe.Slice((*byte)(unsafe.Pointer(&bBytes)), 10)
@@ -186,10 +186,10 @@ func (u *NtDll) NewProc(name string) *NtProc {
 	addressOfNames := peb.GetAddressOfNames(baseAddr, exportsBaseAddr)
 	addressOfNameOrdinals := peb.GetAddressOfNameOrdinals(baseAddr, exportsBaseAddr)
 	for i := uint32(0); i < numberOfNames; i++ {
-		fn := mem.ReadCString(baseAddr, mem.ReadDword(addressOfNames, i*4))
+		fn := mem.ReadCString(baseAddr, mem.ReadDwordAtOffset(addressOfNames, i*4))
 		if string(fn) == name || u.cfg.Hasher(string(fn)) == name {
-			nameOrd := mem.ReadWord(addressOfNameOrdinals, i*2)
-			rva := mem.ReadDword(addressOfFunctions, uint32(nameOrd*4))
+			nameOrd := mem.ReadWordAtOffset(addressOfNameOrdinals, i*2)
+			rva := mem.ReadDwordAtOffset(addressOfFunctions, uint32(nameOrd*4))
 			ret.addr = peb.Rva2Va(baseAddr, rva)
 			return ret
 		}

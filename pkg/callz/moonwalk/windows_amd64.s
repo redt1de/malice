@@ -34,6 +34,8 @@ NOTE:
 
 // func doTest(strct *SPOOFER, argh ...uintptr) uint32
 TEXT ·doCall(SB),NOSPLIT, $0-24 // (*struct)8 + (variadic arg base(8) + variadic arg len(8))16 = 24
+    CALL runtime·morestack(SB)
+    MOVQ BX,BX
     _OBF
     MOVQ    strct+0(FP), R11         // put address of struct in R11
     MOVQ    argh_base+8(FP),SI       // put variadic pointer into SI
@@ -98,7 +100,9 @@ TEXT ·doCall(SB),NOSPLIT, $0-24 // (*struct)8 + (variadic arg base(8) + variadi
     _OBF
     MOVQ    JmpRbxGadgetFrameSize(R11),AX
     SUBQ    AX,SP
-    PUSHQ   JmpRbxGadgetRef(DX)
+    MOVQ BX,BX
+    PUSHQ   JmpRbxGadgetRef(DX) //////////////////// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< unexpected SPWRITE when darklib is also used
+    
 
     MOVQ    AddRspXGadgetFrameSize(R11),AX
     SUBQ    AX,SP

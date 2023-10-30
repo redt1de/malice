@@ -1,21 +1,12 @@
-
-
-## TODO:
-# !!!!!!! had issues with S1 !!!!!!!!!!!!!!
- - had to circumvent PEB hooking, ntd does not grab first mod since its not really ntdll
- - pe.Exports() does not work.
-        panic: runtime error: slice bounds out of range [270471:208896]
-        OrdinalTableAddr is not what is expected
-        implement different export lookup using ascherons asm.
-        see darklib.Test()
-
-# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- - hwsyscall,moonwalk need cleaned up, add error/nil value checks, do testing
- - moonwalk needs a little more work, its a bit messy but functional
- - implement the various resolvers in each call type, mem/disk/remote
- - finish darklib, add PEB linking
- - finish get SSN from exception table, pe package was modified with some support for exception table
- - ntd and darklib are using sycall.Syscall() for Call(). need to implement asm func to avoid suspicious syscall import
+# TODO
+ - [ ] darklib: needs PEB linking
+ - [ ] moonwalk: random issue with go stack protections. sometimes if other routines are running we get a panic SPWRITE at line 101 of the asm.
+ - [ ] sysid lookup by exception
+ - [ ] hwsyscall,moonwalk need cleaned up, add error/nil value checks, do testing
+ - [ ] moonwalk needs a little more work, its a bit messy but functional
+ - [ ] figure out the moonwalk SPWRITE issue
+ - [ ] finish get SSN from exception table, pe package was modified with some support for exception table
+ - [ ] ntd and darklib are using sycall.Syscall() for Call(). need to implement asm func to avoid suspicious syscall import
 
 
 ## Functionality:
@@ -38,49 +29,74 @@
  - [ ] Removing hooks in ntdll.dll
  - [ ] In-memory encryption/sleep obfuscation
 
+# pkgs
+## callz
+### darklib
+ - GetModuleHandle + GetProcAddress replacement, no WINAPI calls
+ - DarkLoadLibrary, partial implementation. still need to link the module to PEB.
 
-## pkgs
+### ntd
+- essentially just darklib but focused on ntdll. needed for some of the syscall packages.
 
-#### callz/direct:
-    - direct syscalls
-    - sysid lookup via in mem or on disk (hellsgate)
-    - halos gate fallback (if proc is hooked, try and get sysid from an unhooked neighbor)
-    - supports API hashing
+### direct
+- direct syscalls
+- sysid lookup via in mem or on disk (hellsgate), exception lookup coming soon
+- halos gate fallback (if proc is hooked, try and get sysid from an unhooked neighbor)
+- supports API hashing
+
+#### indirect
+- indirect syscalls
+- sysid lookup via in mem or on disk (hellsgate), exception lookup coming soon
+- halos gate fallback (if proc is hooked, try and get sysid from an unhooked neighbor)
+- supports API hashing
+
+#### _hwsyscall
+ - hwsyscalls implementation
+ - sets VEH and HWBP on the NT call, then tweaks the context to perform an indirect syscall + spoofed return address so call stack isnt KERNEL -> MALCODE
+
+#### moonwalk
+ - silentmoonwalk desync call stack spoofing on indirect syscalls.
+ - slighly sketchy, go is not meant for this kind of thing,GC and stack protections make it rough, still needs some work.
+
+#### proxycall
+- uses undocumented Nt callbacks to create a call stack that appears legitimate. Note, no return values are provided so r1,r2,err will always be empty.
+
+#### hashers
+- Djb2 hashing algo
+
+## check
+
+## dbg
+
+## enc
+- encoders for payloads
+- gzip -> XOR -> gzip encoder
+
+## inst
+- set or clear an instrumentation callback
+
+## mem
+- some util functions for direct memory access
+
+## pe
+- modified fork of github.com/Binject/debug/pe
+- added support for NewFileFromMemory
+
+## peb
+- util functions for working with PEB
+- mainly used to walk exports for sysids and functions
+- had issues with the PE package on SentinelOne systems, so this works better.
+
+## _synth
+- messing with alternative call stack spoofing methods
+
+## util
+
+## veh
+- functions for manipulate vectored exception handlers and hardware breakpoints
 
 
-#### callz/indirect:
-    - indirect syscalls (basically direct syscall but uses a "syscall;ret; trampoline)
-    - sysid lookup via in mem or on disk (hellsgate)
-    - halos gate fallback (if proc is hooked, try and get sysid from an unhooked neighbor)
-    - supports API hashing
-
-#### callz/proxycall:
-    - uses undocumented Nt callbacks to create a call stack that appears legitimate. Note, no return values are provided so r1,r2,err will always be empty.
-
-#### callz/darklib:
-    - darkloadlibrary'ish. still need to implement PEB linking, currently its more of a reflective dll load.
-    - mimics windows.NewLazyDLL(), NewProc() etc but without the use of LoadLibrary() and GetProcAddress() since these may be monitored. This works by extracting Ldr data from PEB and parsing the Dll in mem to get exports. 
-    - supports API hashing
-
-#### callz/moonwalk:
-    - silentmoonwalk desync call stack spoofing on indirect syscalls.
-
-#### callz/hwsyscall:
-    - hwsyscalls implementation
-
-#### callz:
-    - util functions for DLLs/Nt calls
-    - handles ssn resolution,finding gadgets etc.
-
-#### inst:
-    - set or clear an instrumentation callback
-
-#### veh:
-    - functions for manipulate vectored exception handlers and hardware breakpoints
-    - hooks a Dll call using hardware breakpoints and vectored exception handlers.
-
-
-#### all the callz follow a similar pattern for modularity (sliver builders caugh)
+#### all the callz follow a similar pattern for modularity (sliver builders caugh) except ntd and darklib
 ```go
     // you can pretty much replace [package] with direct/indirect/moonwalk/hwsyscall/proxycall and they all work the same way. 
     /* for opts:

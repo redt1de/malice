@@ -2,14 +2,16 @@ package mem
 
 import "unsafe"
 
-func ReadDword(start uintptr, offset uint32) uint32
-func ReadWord(start uintptr, offset uint32) uint16
-func ReadByte(start uintptr, offset uint32) byte
+func ReadDwordAtOffset(start uintptr, offset uint32) uint32
+func ReadWordAtOffset(start uintptr, offset uint32) uint16
+func ReadByteAtOffset(start uintptr, offset uint32) byte
+func ReadQwordAtOffset(start uintptr, offset uint32) byte
+func ReadQword(addr uintptr) uintptr
 
 func ReadCString(start uintptr, offset uint32) []byte {
 	var buf []byte
 	for {
-		ch := ReadByte(start, offset)
+		ch := ReadByteAtOffset(start, offset)
 		if ch == 0 {
 			break
 		}

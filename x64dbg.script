@@ -1,9 +1,11 @@
 
-// startup bp script
-bc
-// set BP on ZwAllocateVirtualMemory, if allocate size (RCX) == 0x8181
-bp 00007FFB9AEAD140
-bpcnd 00007FFB9AEAD140, "[RCX] == 0x8181"
+run
+bpc
+
+
+// set BP on NtAllocateVirtualMemory if allocate size (RCX) == 0x8181 (for testing syscalls etc, set alloc size to 0x8181)
+bp NtAllocateVirtualMemory
+bpcnd NtAllocateVirtualMemory,"[r9]==8181"
 
 // are we in user mod, if not run
 cmp mod.user(cip), 0
@@ -12,53 +14,40 @@ jmp inuser
 ret
 
 nope:
-run
-cmp mod.user(cip), 0
-je nothere
-jmp inuser
-ret
+	run
+	cmp mod.user(cip), 0
+	je nothere
+	jmp inuser
+	ret
 
 // we are in user module, test go asm func start with xor r15,r15 so set a BP there
 inuser:
-findasm "xor r14,0"
-cmp $result, 0
-je nothere
-//bc
-bp ref.addr(0)
-//msg "found xor r15,r15: breakpoint set"
-log "found asm tag: breakpoint set: {p:ref.addr(0)}"
+	// set bp on mov rax,rax
+	findasm "mov rax,rax"
+	cmp $result, 0
+	je no_rax
+	i=0
+	loop_rax:
+		bp ref.addr(i)//, "DBGRAX{d:i}"
+		log "found mov rax,rax tag: breakpoint set: {p:ref.addr(i)}"
+		i++
+		cmp i, ref.count()
+		jne loop_rax
+
+	no_rax:
+	// set bp on mov rbx,rbx
+	findasm "mov rbx,rbx"
+	cmp $result, 0
+	je no_rbx
+	i=0
+	loop_rbx:
+		bp ref.addr(i)//, "DBGRAX{d:i}"
+		log "found mov rbx,rbx tag: breakpoint set: {p:ref.addr(i)}"
+		i++
+		cmp i, ref.count()
+		jne loop_rbx
+	no_rbx:
+	
 
 nothere:
-ret
-
-
-
-/////////////////////////////////
-// script for setting a BP on a hex
-// 
-cmp mod.user(cip), 0
-je nope
-jmp inuser
-ret
-
-nope:
-run
-cmp mod.user(cip), 0
-je nothere
-jmp inuser
-ret
-
-inuser:
-// look for xor r14,0
-find cip, "4983F600"
-cmp $result, 0
-je nothere
-bc
-bp ref.addr(0)
-//msg "found xor r15,r15: breakpoint set"
-log "found asm tag: breakpoint set: {p:ref.addr(0)}"
-
-nothere:
-ret
-
-
+	ret

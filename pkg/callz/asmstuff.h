@@ -20,8 +20,8 @@ util macros and defines used by various assembly files
 // x64dbg: findasm  "mov rax,rax";bp ref.addr(0)
 #define _OBF          \
     BYTE   $0x90      \
-    MOVQ   AX,AX      \
-    BYTE   $0x90      \
+   // MOVQ   AX,AX      \
+   // BYTE   $0x90      \
 //     ADDQ   $0x36,AX \
 //     CMPL   AX,$0    \
 //     JE    bounce    \
